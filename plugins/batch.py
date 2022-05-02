@@ -2,7 +2,7 @@ import asyncio
 import json
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import CHANNELS, ADMINS, SOURCE_CODE
-from utils import replace_link, replace_mdisk_link
+from utils import replace_link, replace_mdisk_link, mdisk_droplink_convertor
 from config import METHOD
 from pyrogram.errors.exceptions.forbidden_403 import ChatWriteForbidden
 import os
@@ -27,14 +27,14 @@ cancel_button = [[
 channel_id = ""
 
 
-@Client.on_message(filters.private & ~filters.edited & filters.command('batch'))
+@Client.on_message(filters.private & filters.command('batch'))
 async def batch(c, m):
     if m.from_user.id in ADMINS:
         if METHOD == "":
             await m.reply_text("Set your METHOD in Heroku vars")
         else:
             global channel_id
-            print("Started")
+
             if CHANNELS is True:
                 if len(m.command) < 2:
                     await m.reply_text(BATCH)
@@ -55,7 +55,6 @@ async def batch(c, m):
 
                     await m.reply(text=f"Are you sure you want to batch short?\n\nChannel: {channel_id}",
                                   reply_markup=InlineKeyboardMarkup(buttons))
-                    print(channel_id)
 
             elif CHANNELS is False:
                 await m.reply(text="Set your CHANNELS var to True in HEROKU to use this command")
@@ -72,16 +71,17 @@ async def cancel(c, m):
         if CHANNELS is True:
             try:
                 txt = await c.send_message(channel_id, ".")
+
                 await txt.delete()
-                print(txt.message_id)
+
             except ChatWriteForbidden:
                 await m.message.edit("Bot is not an admin in the given channel")
             await m.message.edit(text=f"Batch Shortening Started!\n\n Channel: {channel_id}\n\nTo Cancel /cancel",
 
                                  )
 
-            for i in range(txt.message_id, 1, -1):
-                print(i)
+            for i in range(txt.id, 1, -1):
+
                 try:
                     message = await c.get_messages(channel_id, i)
                     if METHOD == "droplink":
@@ -171,9 +171,58 @@ async def cancel(c, m):
                                 print("The given link is either excluded domain link or a droplink link")
                             else:
                                 await message.edit_caption(link)
+
+                    elif METHOD == "mdlink":
+
+                        # reply markup - button post
+
+                        if message.reply_markup:
+                            txt = message.text
+                            reply_markup = json.loads(str(message.reply_markup))
+                            buttsons = []
+                            for i, markup in enumerate(reply_markup["inline_keyboard"]):
+                                buttons = []
+                                for j in markup:
+                                    text = j["text"]
+                                    url = j["url"]
+                                    url = await mdisk_droplink_convertor(url)
+                                    button = InlineKeyboardButton(text, url=url)
+                                    buttons.append(button)
+                                buttsons.append(buttons)
+
+                            try:
+                                if message.text:
+                                    txt = await mdisk_droplink_convertor(txt)
+                                    await message.edit(text=txt, reply_markup=InlineKeyboardMarkup(buttsons))
+                                elif message.caption:
+                                    txt = await mdisk_droplink_convertor(message.caption)
+                                    if message.photo:
+                                        await message.edit_caption(photo=message.photo.file_id, caption=txt,
+                                                                   reply_markup=InlineKeyboardMarkup(buttsons))
+                                    elif message.document:
+                                        await message.edit_caption(photo=message.document.file_id, caption=txt,
+                                                                   reply_markup=InlineKeyboardMarkup(buttsons))
+                            except Exception as e:
+                                print(e)
+
+                        # For text messages
+
+                        elif message.text:
+                            text = message.text
+                            text = await mdisk_droplink_convertor(text)
+                            await message.edit(text)
+
+                        # For media or document messages
+
+                        elif message.media or message.document:
+                            text = message.caption
+                            link = await mdisk_droplink_convertor(text)
+                            if link == text:
+                                print("The given link is either excluded domain link or a droplink link")
+                            else:
+                                await message.edit_caption(link)
+
                     await asyncio.sleep(1)
-
-
                 except:
                     pass
 
